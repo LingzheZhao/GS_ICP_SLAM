@@ -1,0 +1,1 @@
+python3 src/kitti.py /home/junzhe/data/data/kitti_lidar/00/velodyne
