@@ -27,7 +27,7 @@ RUN sudo apt install -y ros-noetic-desktop-full
 
 # GS-ICP SLAM
 WORKDIR /home
-RUN git clone --recursive https://github.com/Lab-of-AI-and-Robotics/GS_ICP_SLAM.git
+RUN git clone --recursive https://github.com/tccoin/GS_ICP_SLAM.git
 
 ## Dependency
 RUN echo "export CUDA_HOME=/usr/local/cuda && export PATH=/usr/local/cuda-11.8/bin:$PATH && LD_LIBRARY_PATH=/usr/local/cuda-11.8/lib64:/lib64:$LD_LIBRARY_PATH" >> ~/.bashrc
@@ -48,19 +48,19 @@ RUN make -j4
 WORKDIR /home/GS_ICP_SLAM/submodules/fast_gicp
 RUN python setup.py install --user
 
-# RUN pip install submodules/diff-gaussian-rasterization
-# RUN pip install submodules/simple-knn
+RUN pip install submodules/diff-gaussian-rasterization
+RUN pip install submodules/simple-knn
 
 ## Viewer
 ### Dependency
 RUN sudo apt install -y libglew-dev libgtk-3-dev libassimp-dev libglfw3-dev libavdevice-dev libxxf86vm-dev
 #### opencv (ver 4.5 required)
 RUN sudo apt-get install -y libjpeg-dev libtiff5-dev libpng-dev \
-                        libavcodec-dev libavformat-dev libswscale-dev libxvidcore-dev libx264-dev libxine2-dev \
-                        libv4l-dev v4l-utils \
-                        libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-                        libgtk2.0-dev mesa-utils libgl1-mesa-dri libgtkgl2.0-dev libgtkglext1-dev \
-                        libatlas-base-dev gfortran libeigen3-dev
+    libavcodec-dev libavformat-dev libswscale-dev libxvidcore-dev libx264-dev libxine2-dev \
+    libv4l-dev v4l-utils \
+    libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+    libgtk2.0-dev mesa-utils libgl1-mesa-dri libgtkgl2.0-dev libgtkglext1-dev \
+    libatlas-base-dev gfortran libeigen3-dev
 WORKDIR /home
 RUN mkdir opencv
 WORKDIR /home/opencv

@@ -7,7 +7,7 @@ Docker and nvidia-docker2 must be installed.
 ## Make docker image from Dockerfile
 ```bash
 cd docker_folder
-docker build -t gsidocker:latest .
+docker build -t tccoin/gs_icp_slam:latest .
 ```
 
 ## Make GS-ICP SLAM container
