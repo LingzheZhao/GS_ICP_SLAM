@@ -11,12 +11,12 @@ import rerun as rr
 sys.path.append(os.path.dirname(__file__))
 from argparse import ArgumentParser
 from arguments import SLAMParameters
-from utils.traj_utils import TrajManager
 from utils.graphics_utils import focal2fov
 from scene.shared_objs import SharedCam, SharedGaussians, SharedPoints, SharedTargetPoints
 from gaussian_renderer import render, network_gui
 from mp_Tracker import Tracker
 from mp_Mapper import Mapper
+from dataloader import *
 
 torch.multiprocessing.set_sharing_strategy('file_system')
 
@@ -49,17 +49,16 @@ class GS_ICP_SLAM(SLAMParameters):
             rr.init("3dgsviewer")
             rr.spawn(connect=False)
         
-        camera_parameters_file = open(self.config)
-        camera_parameters_ = camera_parameters_file.readlines()
-        self.camera_parameters = camera_parameters_[2].split()
-        self.W = int(self.camera_parameters[0])
-        self.H = int(self.camera_parameters[1])
-        self.fx = float(self.camera_parameters[2])
-        self.fy = float(self.camera_parameters[3])
-        self.cx = float(self.camera_parameters[4])
-        self.cy = float(self.camera_parameters[5])
-        self.depth_scale = float(self.camera_parameters[6])
-        self.depth_trunc = float(self.camera_parameters[7])
+        self.dataset = self.get_dataset(self.config, self.dataset_path)
+        
+        self.W = int(self.dataset.image_size[0])
+        self.H = int(self.dataset.image_size[1])
+        self.fx = float(self.dataset.camera[0])
+        self.fy = float(self.dataset.camera[1])
+        self.cx = float(self.dataset.camera[2])
+        self.cy = float(self.dataset.camera[3])
+        self.depth_scale = self.dataset.depth_scale
+        self.depth_trunc = self.dataset.depth_trunc
         self.downsample_idxs, self.x_pre, self.y_pre = self.set_downsample_filter(self.downsample_rate)
         
         try:
@@ -67,15 +66,13 @@ class GS_ICP_SLAM(SLAMParameters):
         except RuntimeError:
             pass
         
-        self.trajmanager = TrajManager(self.camera_parameters[8], self.dataset_path)
-        
         # Make test cam
         # To get memory sizes of shared_cam
-        test_rgb_img, test_depth_img = self.get_test_image(f"{self.dataset_path}/images")
+        test_rgb_img, test_depth_img = self.get_test_image()
         test_points, _, _, _ = self.downsample_and_make_pointcloud(test_depth_img, test_rgb_img)
 
         # Get size of final poses
-        num_final_poses = len(self.trajmanager.gt_poses)
+        num_final_poses = len(self.dataset)
         
         # Shared objects
         self.shared_cam = SharedCam(FoVx=focal2fov(self.fx, self.W), FoVy=focal2fov(self.fy, self.H),
@@ -129,26 +126,20 @@ class GS_ICP_SLAM(SLAMParameters):
             processes.append(p)
         for p in processes:
             p.join()
+        
+    def get_dataset(self, dataset_type, dataset_folder):
+        if dataset_type == 'tartanair':
+            dataset = TartanAirLoader(dataset_folder)
+        elif dataset_type == 'tum':
+            dataset = TUMLoader(dataset_folder)
+        elif dataset_type == 'scannet':
+            dataset = ScannetLoader(dataset_folder)
+        elif dataset_type == 'replica':
+            dataset = ReplicaLoader(dataset_folder)
+        return dataset
 
-    def get_test_image(self, images_folder):
-        
-        if self.camera_parameters[8] == "replica":
-            images_folder = os.path.join(self.dataset_path, "images")
-            image_files = os.listdir(images_folder)
-            image_files = sorted(image_files.copy())
-            image_name = image_files[0].split(".")[0]
-            depth_image_name = f"depth{image_name[5:]}"
-            rgb_image = cv2.imread(f"{self.dataset_path}/images/{image_name}.jpg")
-            depth_image = np.array(o3d.io.read_image(f"{self.dataset_path}/depth_images/{depth_image_name}.png")).astype(np.float32)
-        elif self.camera_parameters[8] == "tum":
-            rgb_folder = os.path.join(self.dataset_path, "rgb")
-            depth_folder = os.path.join(self.dataset_path, "depth")
-            rgb_file = os.listdir(rgb_folder)[0]
-            depth_file = os.listdir(depth_folder)[0]
-            rgb_image = cv2.imread(os.path.join(rgb_folder, rgb_file))
-            depth_image = np.array(o3d.io.read_image(os.path.join(depth_folder, depth_file))).astype(np.float32)
-        
-        return rgb_image, depth_image
+    def get_test_image(self):
+        return self.dataset.read_current_rgbd()
 
     def run_viewer(self, lower_speed=True):
         if network_gui.conn == None:
@@ -162,11 +153,11 @@ class GS_ICP_SLAM(SLAMParameters):
                 if custom_cam != None:
                     net_image = render(custom_cam, self.gaussians, self.pipe, self.background, scaling_modifer)["render"]
                     net_image_bytes = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
-                    
+
                     # net_image = render(custom_cam, self.gaussians, self.pipe, self.background, scaling_modifer)["render_depth"]
                     # net_image = torch.concat([net_image,net_image,net_image], dim=0)
                     # net_image_bytes = memoryview((torch.clamp(net_image, min=0, max=7.0) * 50).byte().permute(1, 2, 0).contiguous().cpu().numpy())
-                    
+
                 self.last_t = time.time()
                 network_gui.send(net_image_bytes, self.dataset_path) 
                 if do_training and (not keep_alive):
@@ -211,21 +202,6 @@ class GS_ICP_SLAM(SLAMParameters):
         # untrackable gaussians (won't be used in tracking, but will be used in 3DGS)
         
         return points.numpy(), colors.numpy(), z_values.numpy(), filter[0].numpy()
-    
-    def get_image_dirs(self, images_folder):
-        if self.camera_parameters[8] == "replica":
-            images_folder = os.path.join(self.dataset_path, "images")
-            image_files = os.listdir(images_folder)
-            image_files = sorted(image_files.copy())
-            image_name = image_files[0].split(".")[0]
-            depth_image_name = f"depth{image_name[5:]}"
-        elif self.camera_parameters[8] == "tum":
-            rgb_folder = os.path.join(self.dataset_path, "rgb")
-            depth_folder = os.path.join(self.dataset_path, "depth")
-            image_files = os.listdir(rgb_folder)
-            depth_files = os.listdir(depth_folder)
- 
-        return image_files, depth_files
 
 if __name__ == "__main__":
     parser = ArgumentParser(description="dataset_path / output_path / verbose")

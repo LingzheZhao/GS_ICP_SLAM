@@ -1,5 +1,5 @@
 OUTPUT_PATH="experiments/results"
-DATASET_PATH="dataset/TUM"
+DATASET_PATH="dataset/tum"
 
 str_pad() {
 

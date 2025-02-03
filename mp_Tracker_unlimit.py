@@ -51,8 +51,7 @@ class Tracker(SLAMParameters):
         self.reg = pygicp.FastGICP()
         
         # Camera poses
-        self.trajmanager = TrajManager(self.camera_parameters[8], self.dataset_path)
-        self.poses = [self.trajmanager.gt_poses[0]]
+        self.poses = [np.array(slam.dataset[0][0])]
         # Keyframes(added to map gaussians)
         self.last_t = time.time()
         self.iteration_images = 0

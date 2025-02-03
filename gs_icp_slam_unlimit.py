@@ -209,21 +209,6 @@ class GS_ICP_SLAM(SLAMParameters):
         # untrackable gaussians (won't be used in tracking, but will be used in 3DGS)
         
         return points.numpy(), colors.numpy(), z_values.numpy(), filter[0].numpy()
-    
-    def get_image_dirs(self, images_folder):
-        if self.camera_parameters[8] == "replica":
-            images_folder = os.path.join(self.dataset_path, "images")
-            image_files = os.listdir(images_folder)
-            image_files = sorted(image_files.copy())
-            image_name = image_files[0].split(".")[0]
-            depth_image_name = f"depth{image_name[5:]}"
-        elif self.camera_parameters[8] == "tum":
-            rgb_folder = os.path.join(self.dataset_path, "rgb")
-            depth_folder = os.path.join(self.dataset_path, "depth")
-            image_files = os.listdir(rgb_folder)
-            depth_files = os.listdir(depth_folder)
- 
-        return image_files, depth_files
 
 if __name__ == "__main__":
     parser = ArgumentParser(description="dataset_path / output_path / verbose")
