@@ -20,6 +20,8 @@ class TrajManager:
             self.gt_poses = self.tum_load_poses(self.dataset_path + '/traj.txt')
         elif self.which_dataset == "replica":
             self.gt_poses = self.replica_load_poses(self.dataset_path + '/traj.txt')
+        elif self.which_dataset == "scannet":
+            self.gt_poses = self.scannet_load_poses(self.dataset_path + '/pose')
         else:
             print("Unknown dataset!")
             sys.exit()
@@ -113,6 +115,21 @@ class TrajManager:
         
         return np.array(poses)
     
+    def scannet_load_poses(self, path):
+        # many txt files are stored in the path
+        # load all txt files, extract poses and concatenate them
+        # poses are stored in the form of 4x4 matrix, four lines
+        poses = []
+        for file in os.listdir(path):
+            if file.endswith('.txt'):
+                with open(os.path.join(path, file), 'r') as f:
+                    lines = f.readlines()
+                lines = [line.strip() for line in lines]
+                joined_lines = ' '.join(lines)
+                c2w = np.array(list(map(float, joined_lines.split()))).reshape(4, 4)
+                poses.append(c2w)
+        return np.array(poses)
+
     def parse_list(self, filepath, skiprows=0):
         data = np.loadtxt(filepath, delimiter=' ',
                           dtype=np.unicode_, skiprows=skiprows)

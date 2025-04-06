@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import cv2
+from natsort import natsorted
 from evo.tools import file_interface
 from spatialmath import *
 import plotly.graph_objects as go
@@ -376,9 +377,28 @@ class ScannetLoader(DataLoaderBase):
         self.rgb_folder = self._fix_path(rgb_folder)
         self.pose_folder = self._fix_path('pose/')
         self.intrinsic_folder = self._fix_path('intrinsic/')
-        self.camera, self.image_size = self.load_intrinsics()
-        self.depth_scale = 1.0
+        self.depth_scale = 1000.0
         self.depth_trunc = 10.
+
+        # load file names
+        self.rgb_files = []
+        for root, dirs, files in os.walk(self.dataset_folder+self.rgb_folder):
+            for file in files:
+                if file.endswith('.jpg'):
+                    self.rgb_files.append(file)
+        self.depth_files = []
+        for root, dirs, files in os.walk(self.dataset_folder+self.depth_folder):
+            for file in files:
+                if file.endswith('.png'):
+                    self.depth_files.append(file)
+        assert len(self.rgb_files) > 0, f'No rgb files found in {self.rgb_folder}'
+        assert len(self.depth_files) > 0, f'No depth files found in {self.depth_folder}'
+        self.rgb_files = natsorted(self.rgb_files)
+        self.depth_files = natsorted(self.depth_files)
+
+        # load intrinsics
+        self.camera, self.image_size = self.load_intrinsics()
+        # load poses
         self.load_ground_truth()
 
     def load_intrinsics(self) -> tuple[list, tuple]:
@@ -387,16 +407,21 @@ class ScannetLoader(DataLoaderBase):
         camera = [intrinsics[0][0], intrinsics[1][1],
                   intrinsics[0][2], intrinsics[1][2]]  # fx, fy, cx, cy
 
-        first_rgb = cv2.imread(f'{self.dataset_folder}{self.rgb_folder}0.jpg')
+        first_rgb_path = self.dataset_folder + self.rgb_folder + self.rgb_files[0]
+        first_rgb = cv2.imread(first_rgb_path)
+        assert first_rgb is not None, f'Failed to load {first_rgb_path}'
         image_size = (first_rgb.shape[1], first_rgb.shape[0])
         return camera, image_size
 
     def read_current_rgbd(self) -> tuple[np.ndarray, np.ndarray]:
-        index_str = str(self.curr_index)
+        index_str = str(self.start_index + self.curr_index)
         rgb = cv2.imread(
             f'{self.dataset_folder}{self.rgb_folder}{index_str}.jpg')
+        assert rgb is not None, f'Failed to load {index_str}.jpg. self.start_index={self.start_index}, self.curr_index={self.curr_index}'
         depth = cv2.imread(
-            f'{self.dataset_folder}{self.depth_folder}{index_str}.png', cv2.IMREAD_ANYDEPTH) / 1000.0
+            f'{self.dataset_folder}{self.depth_folder}{index_str}.png', cv2.IMREAD_ANYDEPTH)
+        assert depth is not None, f'Failed to load {index_str}.png'
+        depth = depth.astype(np.float32) / self.depth_scale
         depth = cv2.resize(depth, self.image_size,
                            interpolation=cv2.INTER_NEAREST)
         return rgb, depth
@@ -406,8 +431,10 @@ class ScannetLoader(DataLoaderBase):
 
     def load_ground_truth(self) -> None:
         gt = []
-        for i in range(len(self)):
-            pose_file = f'{self.dataset_folder}{self.pose_folder}{i}.txt'
+        for rgb_file in self.rgb_files:
+            # substitute the file name with suffix txt
+            pose_file = rgb_file.replace('.jpg', '.txt')
+            pose_file = f'{self.dataset_folder}{self.pose_folder}{pose_file}'
             pose = self._load_array_from_txt(pose_file)
             if pose[3][0] != 0:
                 pose = last_pose
@@ -452,21 +479,3 @@ class ReplicaLoader(DataLoaderBase):
         for pose in poses:
             gt.append(SE3(trnorm(pose)))
         self.gt = SE3(gt)
-
-
-def load_dataset(cfg) -> DataLoaderBase:
-    cfg = cfg.dataset
-    if cfg.type == 'tartanair':
-        dataset = TartanAirLoader(cfg.folder)
-    elif cfg.type == 'tum':
-        dataset = TUMLoader(cfg.folder)
-    elif cfg.type == 'scannet':
-        dataset = ScannetLoader(cfg.folder)
-    elif cfg.type == 'replica':
-        dataset = ReplicaLoader(cfg.folder)
-    else:
-        raise NotImplementedError
-
-    dataset.set_range(cfg.start_index, cfg.end_index, cfg.frame_interval)
-
-    return dataset

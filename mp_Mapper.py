@@ -1,25 +1,40 @@
-from dataloader import *
-import matplotlib.pyplot as plt
-import open3d as o3d
-from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
-from tqdm import tqdm
-from gaussian_renderer import render, render_3, network_gui
-from scene import GaussianModel
-from utils.loss_utils import l1_loss, ssim
-from utils.traj_utils import TrajManager
-from arguments import SLAMParameters
 import os
-import torch
-import torch.multiprocessing as mp
-import torch.multiprocessing
 import copy
 import random
 import sys
-import cv2
-import numpy as np
 import time
+from pathlib import Path
+from tqdm import tqdm
+
+os.environ["OPENCV_IO_ENABLE_OPENEXR"] = "1"
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import open3d as o3d
 import rerun as rr
+import torch
+import torch.multiprocessing as mp
+from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
+
 sys.path.append(os.path.dirname(__file__))
+
+from arguments import SLAMParameters
+from dataloader import (
+    DataLoaderBase,
+    TartanAirLoader,
+    TUMLoader,
+    ScannetLoader,
+    ReplicaLoader
+)
+from gaussian_renderer import render, render_3, network_gui
+from scene import GaussianModel
+from utils.traj_utils import TrajManager
+from utils.loss_utils import l1_loss, ssim
+from utils.writers_image import ImageWriter, ImageWriterConfig
+from utils.writers_pose import (
+    TumTrajectoryWriter, TumTrajectoryWriterConfig,
+    NumpyTrajectoryWriter, NumpyTrajectoryWriterConfig
+)
 
 
 class Pipe():
@@ -114,6 +129,17 @@ class Mapper(SLAMParameters):
         self.final_pose = slam.final_pose
         self.demo = slam.demo
         self.is_mapping_process_started = slam.is_mapping_process_started
+
+        self.image_writer: ImageWriter = ImageWriterConfig(
+            workdir=Path(self.output_path) / "renders",
+            enabled=True,
+        ).setup()
+        self.pose_writer_tum: TumTrajectoryWriter = TumTrajectoryWriterConfig(
+            filename=Path(self.output_path) / "traj_tum.txt"
+        ).setup()
+        self.pose_writer_numpy: NumpyTrajectoryWriter = NumpyTrajectoryWriterConfig(
+            filename=Path(self.output_path) / "traj.npz"
+        ).setup()
 
     def run(self):
         self.mapping()
@@ -361,7 +387,7 @@ class Mapper(SLAMParameters):
 
         cal_lpips = LearnedPerceptualImagePatchSimilarity(
             net_type='alex', normalize=True).to("cuda")
-        original_resolution = True
+        original_resolution = False
         dataset = self.get_dataset()
         final_poses = self.final_pose
         fig, axs = plt.subplots(1, 2, figsize=(10, 5))
@@ -407,8 +433,9 @@ class Mapper(SLAMParameters):
 
                 cam.update_matrix()
                 # rendered rgb
-                ours_rgb_ = render(cam, self.gaussians,
-                                   self.pipe, self.background)["render"]
+                render_pkg = render(cam, self.gaussians, self.pipe, self.background)
+                ours_rgb_ = render_pkg["render"]
+                ours_depth_ = render_pkg["render_depth"]
                 ours_rgb_ = torch.clamp(ours_rgb_, 0., 1.).cuda()
 
                 valid_depth_mask_ = (gt_depth_ > 0)
@@ -427,20 +454,38 @@ class Mapper(SLAMParameters):
                     gt_rgb_.unsqueeze(0), ours_rgb_.unsqueeze(0))
                 lpips += [lpips_value.detach().cpu()]
 
-                if self.save_results and (i % 100 == 0 or i == len(dataset)-1):
-                    ours_rgb = np.asarray(
+                # if self.save_results and (i % 100 == 0 or i == len(dataset)-1):
+                if self.save_results:
+                    ours_rgb_npy = np.asarray(
                         ours_rgb_.detach().cpu()).squeeze().transpose((1, 2, 0))
 
                     axs[0].set_title("gt rgb")
                     axs[0].imshow(gt_rgb)
                     axs[0].axis("off")
                     axs[1].set_title("rendered rgb")
-                    axs[1].imshow(ours_rgb)
+                    axs[1].imshow(ours_rgb_npy)
                     axs[1].axis("off")
                     plt.suptitle(f'{i+1} frame')
                     plt.pause(1e-15)
                     plt.savefig(f"{self.output_path}/result_{i}.png")
                     plt.cla()
+
+                    self.image_writer.write_image(
+                        image_name=f"rgb_{i:04}",
+                        data=ours_rgb_,
+                    )
+                    self.image_writer.write_image(
+                        image_name=f"depth_{i:04}",
+                        data=ours_depth_,
+                    )
+                    self.pose_writer_tum.write(
+                        timestamp=i,
+                        pose=c2w,
+                    )
+                    self.pose_writer_numpy.write(
+                        timestamp=i,
+                        pose=c2w,
+                    )
 
                 torch.cuda.empty_cache()
 

@@ -3,6 +3,7 @@ import torch
 import torch.multiprocessing as mp
 import torch.multiprocessing
 import sys
+os.environ["OPENCV_IO_ENABLE_OPENEXR"] = "1"
 import cv2
 import numpy as np
 import open3d as o3d
