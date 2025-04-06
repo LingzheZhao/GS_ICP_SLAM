@@ -126,7 +126,7 @@ class GS_ICP_SLAM(SLAMParameters):
             processes.append(p)
         for p in processes:
             p.join()
-        
+
     def get_dataset(self, dataset_type, dataset_folder):
         if 'tartanair' in dataset_type.lower():
             dataset = TartanAirLoader(dataset_folder)

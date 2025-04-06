@@ -53,9 +53,9 @@ run_()
     local downsample_rate=${10}
     
     echo "run $dataset"
-    python -W ignore gs_icp_slam_unlimit.py --dataset_path $DATASET_PATH/$dataset\
+    python -W ignore gs_icp_slam.py --dataset_path $DATASET_PATH/$dataset\
                                     --config $config\
-                                    --output_path $OUTPUT_PATH\
+                                    --output_path $OUTPUT_PATH/$dataset/results\
                                     --keyframe_th $keyframe_th\
                                     --knn_maxd $knn_maxd\
                                     --overlapped_th $overlapped_th\
@@ -67,7 +67,8 @@ run_()
     wait
 }
 
-run_replica()
+
+run_replica_test()
 {
     local result_txt=$1
     local keyframe_th=$2
@@ -78,15 +79,9 @@ run_replica()
     local overlapped_th2=$7
     local downsample_rate=$8
 
-    run_ "room0" "configs/Replica/caminfo.txt" $result_txt $keyframe_th $knn_maxd $overlapped_th $max_correspondence_distance $trackable_opacity_th $overlapped_th2 $downsample_rate
-    run_ "room1" "configs/Replica/caminfo.txt" $result_txt $keyframe_th $knn_maxd $overlapped_th $max_correspondence_distance $trackable_opacity_th $overlapped_th2 $downsample_rate
-    run_ "room2" "configs/Replica/caminfo.txt" $result_txt $keyframe_th $knn_maxd $overlapped_th $max_correspondence_distance $trackable_opacity_th $overlapped_th2 $downsample_rate
-    run_ "office0" "configs/Replica/caminfo.txt" $result_txt $keyframe_th $knn_maxd $overlapped_th $max_correspondence_distance $trackable_opacity_th $overlapped_th2 $downsample_rate
-    run_ "office1" "configs/Replica/caminfo.txt" $result_txt $keyframe_th $knn_maxd $overlapped_th $max_correspondence_distance $trackable_opacity_th $overlapped_th2 $downsample_rate
-    run_ "office2" "configs/Replica/caminfo.txt" $result_txt $keyframe_th $knn_maxd $overlapped_th $max_correspondence_distance $trackable_opacity_th $overlapped_th2 $downsample_rate
-    run_ "office3" "configs/Replica/caminfo.txt" $result_txt $keyframe_th $knn_maxd $overlapped_th $max_correspondence_distance $trackable_opacity_th $overlapped_th2 $downsample_rate
-    run_ "office4" "configs/Replica/caminfo.txt" $result_txt $keyframe_th $knn_maxd $overlapped_th $max_correspondence_distance $trackable_opacity_th $overlapped_th2 $downsample_rate
+    run_ "office0_short2" "configs/Replica/caminfo.txt" $result_txt $keyframe_th $knn_maxd $overlapped_th $max_correspondence_distance $trackable_opacity_th $overlapped_th2 $downsample_rate
 }
+
 
 # txt_file="re_init_ablation/default_3DGS.txt"
 txt_file="dummy.txt"
@@ -111,5 +106,5 @@ downsample_rate=10
 keyframe_th=0.7
 
 
-run_replica $txt_file $keyframe_th $knn_maxd $overlapped_th $max_correspondence_distance \
+run_replica_test $txt_file $keyframe_th $knn_maxd $overlapped_th $max_correspondence_distance \
 $trackable_opacity_th $overlapped_th2 $downsample_rate
