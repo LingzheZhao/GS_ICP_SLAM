@@ -398,8 +398,18 @@ class ScannetLoader(DataLoaderBase):
 
         # load intrinsics
         self.camera, self.image_size = self.load_intrinsics()
+        # override image size to 640x480
+        self.override_image_size(640, 480)
         # load poses
         self.load_ground_truth()
+
+    def override_image_size(self, new_width=640, new_height=480) -> None:
+        # scale intrinsics
+        self.camera[0] = self.camera[0] * new_width / self.image_size[0]
+        self.camera[1] = self.camera[1] * new_height / self.image_size[1]
+        self.camera[2] = self.camera[2] * new_width / self.image_size[0]
+        self.camera[3] = self.camera[3] * new_height / self.image_size[1]
+        self.image_size = (new_width, new_height)
 
     def load_intrinsics(self) -> tuple[list, tuple]:
         intrinsics_file = f'{self.dataset_folder}{self.intrinsic_folder}intrinsic_color.txt'
@@ -418,12 +428,14 @@ class ScannetLoader(DataLoaderBase):
         rgb = cv2.imread(
             f'{self.dataset_folder}{self.rgb_folder}{index_str}.jpg')
         assert rgb is not None, f'Failed to load {index_str}.jpg. self.start_index={self.start_index}, self.curr_index={self.curr_index}'
+        rgb = cv2.resize(rgb, self.image_size, interpolation=cv2.INTER_LINEAR)
         depth = cv2.imread(
             f'{self.dataset_folder}{self.depth_folder}{index_str}.png', cv2.IMREAD_ANYDEPTH)
         assert depth is not None, f'Failed to load {index_str}.png'
         depth = depth.astype(np.float32) / self.depth_scale
-        depth = cv2.resize(depth, self.image_size,
-                           interpolation=cv2.INTER_NEAREST)
+        # assert depth size is consistent with required size
+        assert depth.shape[0] == self.image_size[1] and depth.shape[1] == self.image_size[0], f'Failed to load {index_str}.png. depth size is inconsistent with required size'
+        # depth = cv2.resize(depth, self.image_size, interpolation=cv2.INTER_NEAREST)
         return rgb, depth
 
     def read_current_ground_truth(self) -> SE3:
