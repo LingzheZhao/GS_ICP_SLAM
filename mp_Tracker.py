@@ -114,6 +114,7 @@ class Tracker(SLAMParameters):
         self.total_start_time = time.time()
         pbar = tqdm(total=self.num_images)
 
+        os.makedirs(f"{self.output_paths}/pcd", exist_ok=True)
         for ii in range(self.num_images):
             self.iter_shared[0] = ii
             current_image = self.rgb_images.pop(0)

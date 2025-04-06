@@ -1,92 +1,206 @@
-FROM nvidia/cuda:11.8.0-devel-ubuntu20.04
+FROM nvcr.io/nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04 AS base
+
+ARG MAX_JOBS 32
 ARG DEBIAN_FRONTEND=noninteractive
+ARG CUDA_ARCHITECTURES=89;86
+ENV TORCH_CUDA_ARCH_LIST="8.9;8.6" TORCH_NVCC_FLAGS="-Xfatbin -compress-all"
+ENV TCNN_CUDA_ARCHITECTURES=${CUDA_ARCHITECTURES}
+ENV TZ=Asia/Shanghai LANG=C.UTF-8 LC_ALL=C.UTF-8 PIP_NO_CACHE_DIR=1 PIP_CACHE_DIR=/tmp/
 
-RUN apt-get update && apt-get -y upgrade
-RUN apt-get -y install sudo
-RUN adduser --disabled-password --gecos "" user  \
-    && echo 'user:user' | chpasswd \
-    && adduser user sudo \
-    && echo 'user ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+RUN sed -i "s/archive.ubuntu.com/mirrors.ustc.edu.cn/g" /etc/apt/sources.list &&\
+    sed -i "s/security.ubuntu.com/mirrors.ustc.edu.cn/g" /etc/apt/sources.list &&\
+    rm -f /etc/apt/sources.list.d/* &&\
+    rm -rf /opt/hpcx/ &&\
+    apt-get update && apt-get upgrade -y &&\
+    apt-get install -y --no-install-recommends \
+        # Determined requirements and common tools / libs
+        autoconf automake autotools-dev build-essential ca-certificates gnupg2 \
+        make cmake yasm pkg-config gdb gcovr binutils-dev libiberty-dev \
+        ninja-build ccache cppcheck doxygen graphviz plantuml \
+        cimg-dev \
+        clang-format \
+        dh-autoreconf \
+        libatlas-base-dev \
+        libboost-all-dev \
+        liblog4cplus-dev \
+        libssh2-1-dev \
+        libreadline-dev \
+        libcereal-dev \
+        libcgal-dev \
+        libblas-dev libcxsparse3 libceres-dev libeigen3-dev libfftw3-dev liblapack-dev liblapacke-dev libnlopt-dev \
+        libflann-dev metis libmetis-dev libopenblas-dev libsuitesparse-dev \
+        libgtk2.0-dev libglew-dev libglm-dev libglu1-mesa-dev mesa-utils \
+        freeglut3-dev libassimp-dev libglfw3-dev libproj-dev libqt5opengl5-dev \
+        libxrandr-dev libxxf86vm-dev \
+        libgflags-dev libgoogle-glog-dev libgtest-dev \
+        libfreeimage-dev libjpeg-dev libpng-dev libtiff-dev libtiff5-dev \
+        libavcodec-dev libavformat-dev libavutil-dev libavdevice-dev libv4l-dev v4l-utils \
+        libpcap-dev libpostproc-dev libpq-dev libswscale-dev libswresample-dev libxine2-dev \
+        intel-mkl libopenmpi-dev libtbb2 libtbb-dev  \
+        daemontools krb5-user libkrb5-dev \
+        ibverbs-providers libibverbs1 libnuma1 libnuma-dev libpmi2-0-dev \
+        libhdf5-dev protobuf-compiler libprotobuf-dev librdmacm1 libsqlite3-dev libssl-dev libtool \
+        libyaml-dev libyaml-cpp-dev libicu-dev libsimpleini-dev \
+        libopencv-dev libopenexr-dev \
+        ffmpeg zlib1g-dev \
+        ## Useful tools
+        git curl wget unzip xz-utils nano vim-tiny \
+        net-tools sudo htop iotop iputils-ping \
+        cloc locate rsync screen tmux \
+        daemontools nfs-common rsync proxychains \
+        openssh-server openssh-client \
+        software-properties-common \
+        # Python
+        python-is-python3 python3-dev python3.10-dev python3-pip python3-numpy \
+        # PCL
+#        libpcl-dev \
+        # VTK
+#        libvtk9-dev \
+        # OSMesa build dependencies
+        libosmesa6-dev \
+        # EGL build dependencies
+        libopengl-dev \
+        libglvnd-dev \
+        libgl-dev \
+        libglx-dev \
+        libegl-dev \
+        # X11 utils
+        mesa-utils \
+        x11-apps \
+        xorg-dev \
+        # QT
+        qtbase5-dev \
+        # 
+        libjsoncpp-dev \
+    && apt-get purge unattended-upgrades \
+    && rm /etc/ssh/ssh_host_ecdsa_key \
+    && rm /etc/ssh/ssh_host_ed25519_key \
+    && rm /etc/ssh/ssh_host_rsa_key \
+    && cp /etc/ssh/sshd_config /etc/ssh/sshd_config_bak \
+    && sed -i "s/^.*X11Forwarding.*$/X11Forwarding yes/" /etc/ssh/sshd_config \
+    && sed -i "s/^.*X11UseLocalhost.*$/X11UseLocalhost no/" /etc/ssh/sshd_config \
+    && grep "^X11UseLocalhost" /etc/ssh/sshd_config || echo "X11UseLocalhost no" >> /etc/ssh/sshd_config \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# install python3.9
-RUN sudo apt-get update
-RUN sudo apt-get -y upgrade
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -y keyboard-configuration
-RUN sudo DEBIAN_FRONTEND=noninteractive apt install -y python3.9 python3.9-dev
-RUN sudo DEBIAN_FRONTEND=noninteractive apt-get -y install wget python3-pip build-essential git curl lsb-release
+###############################################################
+WORKDIR /tmp
 
-# symlink
-RUN sudo update-alternatives --install /usr/bin/python python /usr/bin/python3.9 1
-RUN ln -s -f /usr/bin/python /usr/bin/python3
+# Install Determined AI and python deps
+ENV PYTHONUNBUFFERED=1 PYTHONFAULTHANDLER=1 PYTHONHASHSEED=0
+ENV JUPYTER_CONFIG_DIR=/run/determined/jupyter/config
+ENV JUPYTER_DATA_DIR=/run/determined/jupyter/data
+ENV JUPYTER_RUNTIME_DIR=/run/determined/jupyter/runtime
+RUN git clone https://github.com/LingzheZhao/determinedai-container-scripts &&\
+    cd determinedai-container-scripts &&\
+    git checkout v0.2.3 &&\
+    pip config set global.index-url https://mirrors.bfsu.edu.cn/pypi/web/simple &&\
+    pip install -U pip setuptools pathtools promise pybind11 &&\
+    pip install determined && pip uninstall -y determined &&\
+    pip install -r notebook-requirements.txt &&\
+    ./add_det_nobody_user.sh &&\
+    ./install_libnss_determined.sh &&\
+    rm -rf /tmp/*
 
-# For pcl (including pcl visualizer)
-RUN sudo sh -c 'echo "deb http://packages.ros.org/ros/ubuntu $(lsb_release -sc) main" > /etc/apt/sources.list.d/ros-latest.list'
-RUN curl -s https://raw.githubusercontent.com/ros/rosdistro/master/ros.asc | sudo apt-key add -
-RUN sudo apt update
-RUN sudo apt install -y ros-noetic-desktop-full
+# gcc
+RUN add-apt-repository ppa:ubuntu-toolchain-r/test -y
+RUN apt-get install -y gcc-11 g++-11
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 100 \
+   &&  update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 100
 
-# GS-ICP SLAM
-WORKDIR /home
-RUN git clone --recursive https://github.com/tccoin/GS_ICP_SLAM.git
+# cmake
+RUN wget https://github.com/Kitware/CMake/releases/download/v3.22.1/cmake-3.22.1-Linux-x86_64.sh -O cmake-3.22.1.sh \
+   &&  chmod +x ./cmake-3.22.1.sh \
+   &&  ./cmake-3.22.1.sh --skip-license --prefix=/usr/local \
+   && rm -rf /tmp/*
 
-## Dependency
-RUN echo "export CUDA_HOME=/usr/local/cuda && export PATH=/usr/local/cuda-11.8/bin:$PATH && LD_LIBRARY_PATH=/usr/local/cuda-11.8/lib64:/lib64:$LD_LIBRARY_PATH" >> ~/.bashrc
-RUN pip install opencv-contrib-python scipy tqdm plyfile
-RUN pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
-RUN pip install torchmetrics
-RUN sudo apt-get install -y ninja-build
-RUN pip3 install --upgrade pip
-RUN pip3.9 install open3d --ignore-installed PyYAML
+# libtorch
+RUN cd / \
+   &&  wget https://download.pytorch.org/libtorch/cu118/libtorch-cxx11-abi-shared-with-deps-2.1.2%2Bcu118.zip -O libtorch-cu118.zip \
+   &&  unzip libtorch-cu118.zip \
+   &&  rm libtorch-cu118.zip
+ENV Torch_DIR=/libtorch/share/cmake/Torch
 
-## fast_gicp
-WORKDIR /home/GS_ICP_SLAM
-WORKDIR /home/GS_ICP_SLAM/submodules/fast_gicp
-RUN mkdir build
-WORKDIR /home/GS_ICP_SLAM/submodules/fast_gicp/build
-RUN cmake ..
-RUN make -j4
-WORKDIR /home/GS_ICP_SLAM/submodules/fast_gicp
-RUN python setup.py install --user
+# Install pre-built pytorch and torchvision
+RUN pip install torch==2.1.2+cu118 torchvision==0.16.2+cu118 --extra-index-url https://download.pytorch.org/whl/cu118 &&\
+    rm -rf /tmp/*
 
-RUN pip install submodules/diff-gaussian-rasterization
-RUN pip install submodules/simple-knn
+# Downgrade pcl and vtk for GS_ICP_SLAM(#2)
+ARG VTK_VERSION=9.1
+ARG VTK_SUB_VERSION=9.1.0
+RUN apt-get --purge remove -y "libpcl*" libvtk9-dev &&\
+    apt-get update && apt-get install -y libx11-dev && apt-get clean &&\
+    wget https://www.vtk.org/files/release/${VTK_VERSION}/VTK-${VTK_SUB_VERSION}.tar.gz &&\
+    tar -xvzf VTK-${VTK_SUB_VERSION}.tar.gz &&\
+    cd VTK-${VTK_SUB_VERSION} &&\
+    cmake -B build -GNinja \
+        -DVTK_USE_CUDA=ON \
+        -DVTK_OPENGL_HAS_EGL:BOOL=ON \
+        -DVTK_USE_X:BOOL=ON \
+        -DVTK_DEFAULT_RENDER_WINDOW_HEADLESS:BOOL=ON \
+        -DVTK_QT_VERSION:STRING=5 \
+        -DQT_QMAKE_EXECUTABLE:PATH=`which qmake` \
+        -DVTK_Group_Qt:BOOL=ON \
+        -DCMAKE_PREFIX_PATH:PATH=`which cmake` \
+        -DBUILD_SHARED_LIBS:BOOL=ON \
+    &&\
+    cmake --build build -t install &&\
+    ldconfig &&\
+    rm -rf /tmp
+RUN git clone https://github.com/PointCloudLibrary/pcl.git &&\
+    cd pcl &&\
+    git checkout pcl-1.14.1 &&\
+    cmake -B build -GNinja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DVTK_DIR=/usr/local/include/vtk-${VTK_VERSION} \
+    &&\
+    cmake --build build -t install &&\
+    ldconfig &&\
+    rm -rf /tmp/*
 
-## Viewer
-### Dependency
-RUN sudo apt install -y libglew-dev libgtk-3-dev libassimp-dev libglfw3-dev libavdevice-dev libxxf86vm-dev
-#### opencv (ver 4.5 required)
-RUN sudo apt-get install -y libjpeg-dev libtiff5-dev libpng-dev \
-    libavcodec-dev libavformat-dev libswscale-dev libxvidcore-dev libx264-dev libxine2-dev \
-    libv4l-dev v4l-utils \
-    libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-    libgtk2.0-dev mesa-utils libgl1-mesa-dri libgtkgl2.0-dev libgtkglext1-dev \
-    libatlas-base-dev gfortran libeigen3-dev
-WORKDIR /home
-RUN mkdir opencv
-WORKDIR /home/opencv
-RUN wget -O opencv.zip https://github.com/opencv/opencv/archive/4.5.5.zip
-RUN wget -O opencv_contrib.zip https://github.com/opencv/opencv_contrib/archive/4.5.5.zip
-RUN unzip opencv.zip && unzip opencv_contrib.zip
-RUN rm opencv.zip && rm opencv_contrib.zip
-WORKDIR /home/opencv/opencv-4.5.5
-RUN mkdir build
-WORKDIR /home/opencv/opencv-4.5.5/build
-RUN cmake -D OPENCV_EXTRA_MODULES_PATH=/home/opencv/opencv_contrib-4.5.5/modules ..
-RUN make -j4
-RUN sudo make install
+###############################################################
+WORKDIR /opt
 
-#### embree 3.0
-WORKDIR /home
-RUN wget https://github.com/embree/embree/archive/refs/tags/v3.0.0.tar.gz
-RUN tar -zxvf v3.0.0.tar.gz
-WORKDIR /home/embree-3.0.0
-RUN mkdir build
-WORKDIR /home/embree-3.0.0/build
-RUN cmake -D EMBREE_ISPC_SUPPORT=False ..
-RUN make -j4
-RUN sudo make install
+# Photo-SLAM
+RUN git clone https://github.com/HuajianUP/Photo-SLAM.git /opt/Photo-SLAM \
+   &&  cd /opt/Photo-SLAM \
+   &&  cd ./ORB-SLAM3/Thirdparty/DBoW2 \
+   &&  mkdir build \
+   &&  cd build \
+   &&  cmake .. -DCMAKE_BUILD_TYPE=Release \
+   &&  make -j \
+   &&  cp ../lib/*.so /usr/local/lib \
+   &&  cd ../../g2o \
+   &&  mkdir build \
+   &&  cd build \
+   &&  cmake .. -DCMAKE_BUILD_TYPE=Release \
+   &&  make -j \
+   &&  cp ../lib/*.so /usr/local/lib
 
-### build / install
-WORKDIR /home/GS_ICP_SLAM/SIBR_viewers
-RUN cmake -Bbuild . -DCMAKE_BUILD_TYPE=Release
-RUN cmake --build build -j4 --target install
+# RTG-SLAM
+COPY build_orb.sh /tmp/build_orb.sh
+RUN git clone https://github.com/MisEty/RTG-SLAM \
+   && cd RTG-SLAM \
+   && git -c url.https://github.com/.insteadOf=git@github.com: submodule update --init --recursive \
+   && rm build_orb.sh && cp /tmp/build_orb.sh . \
+   && chmod u+x build_orb.sh \
+   && ./build_orb.sh
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/RTG-SLAM/thirdParty/install/lib
+ENV PATH=$PATH:/opt/RTG-SLAM/thirdParty/install/bin
+
+# RTG-SLAM deps
+RUN apt-get update && apt-get remove -y python3-blinker && apt-get clean &&\
+    pip install -U "numpy<2.0" scipy plyfile open3d fvcore scikit-image opencv-python \
+                    tensorboard GPUtil torchmetrics trimesh pytorch_msssim rerun \
+                    evo spatialmath-python \
+                    icecream \
+    &&\
+    pip install --no-index --no-cache-dir pytorch3d -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py310_cu118_pyt211/download.html &&\
+    cd /opt/RTG-SLAM/submodules/ &&\
+    pip install ./simple-knn ./diff-gaussian-rasterizer-depth  ./cuda_utils
+
+# GS-ICP-SLAM
+RUN git clone --recursive https://github.com/Lab-of-AI-and-Robotics/GS_ICP_SLAM &&\
+    cd GS_ICP_SLAM/submodules &&\
+    pip install diff-gaussian-rasterization/ simple-knn/ fast_gicp/ &&\
+    rm -rf /tmp/*

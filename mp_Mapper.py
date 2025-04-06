@@ -342,14 +342,16 @@ class Mapper(SLAMParameters):
         dataset_type = self.dataset_type
         dataset_folder = self.dataset_path
 
-        if dataset_type == 'tartanair':
+        if 'tartanair' in dataset_type.lower():
             dataset = TartanAirLoader(dataset_folder)
-        elif dataset_type == 'tum':
+        elif 'tum' in dataset_type.lower():
             dataset = TUMLoader(dataset_folder)
-        elif dataset_type == 'scannet':
+        elif 'scannet' in dataset_type.lower():
             dataset = ScannetLoader(dataset_folder)
-        elif dataset_type == 'replica':
+        elif 'replica' in dataset_type.lower():
             dataset = ReplicaLoader(dataset_folder)
+        else:
+            raise ValueError(f"Unknown dataset type: {dataset_type}")
         return dataset
 
     def calc_2d_metric(self):
