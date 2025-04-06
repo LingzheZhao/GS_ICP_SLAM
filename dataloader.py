@@ -286,15 +286,15 @@ class TUMLoader(DataLoaderBase):
         self.depth_trunc = 3.
         # load file names
         self.rgb_files = []
-        for root, dirs, files in os.walk(self.dataset_folder+self.rgb_folder):
-            for file in files:
-                if file.endswith('.png'):
-                    self.rgb_files.append(file[:-4])
+        files = os.listdir(self.dataset_folder+self.rgb_folder)
+        for file in files:
+            if file.endswith('.png'):
+                self.rgb_files.append(file[:-4])
         self.depth_files = []
-        for root, dirs, files in os.walk(self.dataset_folder+self.depth_folder):
-            for file in files:
-                if file.endswith('.png'):
-                    self.depth_files.append(file[:-4])
+        files = os.listdir(self.dataset_folder+self.depth_folder)
+        for file in files:
+            if file.endswith('.png'):
+                self.depth_files.append(file[:-4])
         self.rgb_files = sorted(self.rgb_files)
         self.depth_files = sorted(self.depth_files)
         rgb_timestamp = np.array([float(x) for x in self.rgb_files])
@@ -378,7 +378,7 @@ class ScannetLoader(DataLoaderBase):
         self.pose_folder = self._fix_path('pose/')
         self.intrinsic_folder = self._fix_path('intrinsic/')
         self.depth_scale = 1000.0
-        self.depth_trunc = 10.
+        self.depth_trunc = 0.1
 
         # load file names
         self.rgb_files = []
@@ -430,9 +430,10 @@ class ScannetLoader(DataLoaderBase):
         assert rgb is not None, f'Failed to load {index_str}.jpg. self.start_index={self.start_index}, self.curr_index={self.curr_index}'
         rgb = cv2.resize(rgb, self.image_size, interpolation=cv2.INTER_LINEAR)
         depth = cv2.imread(
-            f'{self.dataset_folder}{self.depth_folder}{index_str}.png', cv2.IMREAD_ANYDEPTH)
+            f'{self.dataset_folder}{self.depth_folder}{index_str}.png', cv2.IMREAD_UNCHANGED)
         assert depth is not None, f'Failed to load {index_str}.png'
         depth = depth.astype(np.float32) / self.depth_scale
+        print(f'depth min: {np.min(depth)}, max: {np.max(depth)}')
         # assert depth size is consistent with required size
         assert depth.shape[0] == self.image_size[1] and depth.shape[1] == self.image_size[0], f'Failed to load {index_str}.png. depth size is inconsistent with required size'
         # depth = cv2.resize(depth, self.image_size, interpolation=cv2.INTER_NEAREST)

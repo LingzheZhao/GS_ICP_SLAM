@@ -387,7 +387,6 @@ class Mapper(SLAMParameters):
 
         cal_lpips = LearnedPerceptualImagePatchSimilarity(
             net_type='alex', normalize=True).to("cuda")
-        original_resolution = False
         dataset = self.get_dataset()
         final_poses = self.final_pose
         fig, axs = plt.subplots(1, 2, figsize=(10, 5))
@@ -398,25 +397,17 @@ class Mapper(SLAMParameters):
                 cam = self.mapping_cams[0]
                 c2w = final_poses[i]
 
-                if original_resolution:
-                    dataset.set_curr_index(i)
-                    gt_rgb, gt_depth = dataset.read_current_rgbd()
-                    gt_depth = gt_depth.astype(np.float32)
+                dataset.set_curr_index(i)
+                gt_rgb, gt_depth = dataset.read_current_rgbd()
+                gt_depth = gt_depth.astype(np.float32)
 
-                    gt_rgb = cv2.cvtColor(gt_rgb, cv2.COLOR_RGB2BGR)
-                    gt_rgb = gt_rgb/255
-                    gt_rgb_ = torch.from_numpy(
-                        gt_rgb).float().cuda().permute(2, 0, 1)
+                gt_rgb = cv2.cvtColor(gt_rgb, cv2.COLOR_RGB2BGR)
+                gt_rgb = gt_rgb/255
+                gt_rgb_ = torch.from_numpy(
+                    gt_rgb).float().cuda().permute(2, 0, 1)
 
-                    gt_depth_ = torch.from_numpy(
-                        gt_depth).float().cuda().unsqueeze(0)
-                else:
-                    gt_rgb_ = cam.original_image.cuda()
-                    gt_rgb = np.asarray(
-                        gt_rgb_.detach().cpu()).squeeze().transpose((1, 2, 0))
-                    gt_depth_ = cam.original_depth_image.cuda()
-                    gt_depth = np.asarray(
-                        cam.original_depth_image.detach().cpu()).squeeze()
+                gt_depth_ = torch.from_numpy(
+                    gt_depth).float().cuda().unsqueeze(0)
 
                 w2c = np.linalg.inv(c2w)
                 # rendered
@@ -425,11 +416,8 @@ class Mapper(SLAMParameters):
 
                 cam.R = torch.tensor(R)
                 cam.t = torch.tensor(T)
-                if original_resolution:
-                    cam.image_width = gt_rgb_.shape[2]
-                    cam.image_height = gt_rgb_.shape[1]
-                else:
-                    pass
+                cam.image_width = gt_rgb_.shape[2]
+                cam.image_height = gt_rgb_.shape[1]
 
                 cam.update_matrix()
                 # rendered rgb
@@ -459,16 +447,6 @@ class Mapper(SLAMParameters):
                     ours_rgb_npy = np.asarray(
                         ours_rgb_.detach().cpu()).squeeze().transpose((1, 2, 0))
 
-                    axs[0].set_title("gt rgb")
-                    axs[0].imshow(gt_rgb)
-                    axs[0].axis("off")
-                    axs[1].set_title("rendered rgb")
-                    axs[1].imshow(ours_rgb_npy)
-                    axs[1].axis("off")
-                    plt.suptitle(f'{i+1} frame')
-                    plt.pause(1e-15)
-                    plt.savefig(f"{self.output_path}/result_{i}.png")
-                    plt.cla()
 
                     self.image_writer.write_image(
                         image_name=f"rgb_{i:04}",
